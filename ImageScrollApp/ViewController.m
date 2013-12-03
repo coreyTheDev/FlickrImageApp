@@ -24,8 +24,8 @@
 @implementation ViewController
 {
     NSMutableArray *photoURLs;
-    NSMutableArray *photos;
     NSUInteger photoIndex;
+    NSUInteger currentPhoto;
     NSCache *imageCache;
 }
 - (void)viewDidLoad
@@ -34,8 +34,6 @@
     [super viewDidLoad];
 	// Do any additional setup after loading the view, typically from a nib.
     //Setup UI
-    
-    photos = [[NSMutableArray alloc]init];
     photoURLs = [[NSMutableArray alloc]init];
     imageCache = [[NSCache alloc]init];
     
@@ -61,17 +59,21 @@
     [_scrollView setPagingEnabled:YES];
     [_scrollView setDelegate:self];
 }
+
 -(void)pilageFlickr
 {
     FlickrKit *fk = [FlickrKit sharedFlickrKit];
     [fk initializeWithAPIKey:@"838e2ea33c0485e2375366eefd6245bb" sharedSecret:@"3fc5e8ea8f7968c1"];
-    [fk call:@"flickr.photos.getRecent" args:@{@"per_page": @"10"} maxCacheAge:FKDUMaxAgeNeverCache completion:^(NSDictionary *response, NSError *error) {
+    [fk call:@"flickr.photos.getRecent" args:@{@"per_page": @"100"} maxCacheAge:FKDUMaxAgeNeverCache completion:^(NSDictionary *response, NSError *error) {
         if (response) {
             for (NSDictionary *photoData in [response valueForKeyPath:@"photos.photo"]) {
                 NSURL *url = [fk photoURLForSize:FKPhotoSizeMedium640 fromPhotoDictionary:photoData];
                 [photoURLs addObject:url];
             }
             [[NSNotificationCenter defaultCenter] postNotificationName:@"FLICKR_IMAGES_RECEIVED" object:nil];
+        } else if (error)
+        {
+            NSLog(@"%@",[error localizedDescription]);
         }
     }];
 }
@@ -79,55 +81,15 @@
 -(void)getImages
 {
     FlickrKit *fk = [FlickrKit sharedFlickrKit];
-    [fk call:@"flickr.photos.getRecent" args:@{@"per_page": @"10"} maxCacheAge:FKDUMaxAgeNeverCache completion:^(NSDictionary *response, NSError *error) {
+    [fk call:@"flickr.photos.getRecent" args:@{@"per_page": @"100"} maxCacheAge:FKDUMaxAgeNeverCache completion:^(NSDictionary *response, NSError *error) {
         if (response) {
             for (NSDictionary *photoData in [response valueForKeyPath:@"photos.photo"]) {
-                NSURL *url = [fk photoURLForSize:FKPhotoSizeMedium640 fromPhotoDictionary:photoData];
+                NSURL *url = [fk photoURLForSize:FKPhotoSizeOriginal fromPhotoDictionary:photoData];
                 [photoURLs addObject:url];
             }
         }
     }];
 }
-/*
--(IBAction)nextImage:(id)sender
-{
-    photoIndex ++;
-    [self loadImage];
-}
--(IBAction)previousImage:(id)sender
-{
-    if (photoIndex != 0)
-    {
-        photoIndex --;
-        [self loadImage];
-    }
-}
--(void)loadImage
-{
-    if ([photoURLs count] <= photoIndex + 1)
-    {
-        [self getImages];
-    } else
-    {
-        //grab url
-        NSURL *imageURL = (NSURL *)[photoURLs objectAtIndex:photoIndex];
-        //check cache
-        UIImage *nextImage = [imageCache objectForKey:[imageURL path]];
-        if (nextImage)
-        {
-            [_imageView setImage:nextImage];
-        }
-        //grab image from url
-        else
-        {
-            nextImage = [[UIImage alloc]initWithData:[NSData dataWithContentsOfURL:imageURL]];
-            //make a call to resize class
-            [imageCache setObject:nextImage forKey:[imageURL path]];
-            [_imageView setImage:nextImage];
-        }
-    }
-}
-*/
 -(void)createImageForScrollView:(NSNotification *)note
 {
     //When we receive more images from flickr we need to populate the scroll view with 3 image views
@@ -145,19 +107,16 @@
         }
         
     });
-    /*
-        dispatch_async(dispatch_get_main_queue(), ^{
-        NSURL *imagePath = (NSURL *)[photoURLs objectAtIndex:0];
-        UIImage *newImage = [imageCache objectForKey:[imagePath path]];
-        [_imageView setImage:newImage];
-    });*/
 }
 -(void)appendImageViewToScrollView
 {
-    //Grab image url
-    //create image
-    //add image to scrollview
-    //if we only have 5 image urls left, grab more from flickr
+    /*  Algorithm:
+     *  Grab image url
+     *  create image
+     *  add image to scrollview
+     */
+    
+    // if we only have 5 image urls left, grab more from flickr
     if (photoIndex + 5 >= [photoURLs count])
     {
         [self getImages];
@@ -168,19 +127,34 @@
     [imageCache setObject:newImageView forKey:[imagePath path]];
     photoIndex++;
 }
+
 #pragma mark - Scroll View Delegate methods
 -(void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
-    //test content offset
-    //make width larger if content offset is greater than content size - 2*bounds.width
+    //Here we test if we need to create a new image 
     NSInteger contentOffset = [scrollView contentOffset].x;
-    //append  - 2*[scrollView bounds].size.width to keep the loading occuring two into the future
     if (contentOffset >= [scrollView contentSize].width - 3 * [scrollView bounds].size.width)
     {
         NSUInteger newWidth = [scrollView contentSize].width + [UIScreen mainScreen].bounds.size.width;
         [scrollView setContentSize:CGSizeMake(newWidth, [scrollView contentSize].height)];
-        //here we need to create one new image to add to the scroll view
         [self appendImageViewToScrollView];
+    }
+    else {
+        //Here we are not creating a new image
+        /*  Algorithm:
+         *  grab photo url from photo urls array
+         *  check nscache for url key
+         *  if didn't exist: recreate custom image view
+         */
+        currentPhoto = abs([scrollView contentOffset].x)  / [scrollView frame].size.width;
+        NSURL *imagePath = (NSURL *)[photoURLs objectAtIndex:currentPhoto];
+        CustomImageView *newImageView = [imageCache objectForKey:[imagePath path]];
+        if (!newImageView)
+        {
+            newImageView = [[CustomImageView alloc]initWithImageURL:imagePath atPosition:photoIndex];
+            [_scrollView addSubview:newImageView];
+            [imageCache setObject:newImageView forKey:[imagePath path]];
+        }
     }
 }
 @end
