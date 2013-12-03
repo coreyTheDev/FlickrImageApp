@@ -84,7 +84,7 @@
     [fk call:@"flickr.photos.getRecent" args:@{@"per_page": @"100"} maxCacheAge:FKDUMaxAgeNeverCache completion:^(NSDictionary *response, NSError *error) {
         if (response) {
             for (NSDictionary *photoData in [response valueForKeyPath:@"photos.photo"]) {
-                NSURL *url = [fk photoURLForSize:FKPhotoSizeOriginal fromPhotoDictionary:photoData];
+                NSURL *url = [fk photoURLForSize:FKPhotoSizeMedium640 fromPhotoDictionary:photoData];
                 [photoURLs addObject:url];
             }
         }
